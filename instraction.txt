@@ -1,0 +1,111 @@
+MULTI-SYMBOL 5-MINUTE TRADING SIGNAL SYSTEM (ALWAYS LIST RESPONSE)
+
+--------------------------------------------------
+
+GOAL:
+Input: symbol (BTCUSDT, ETHUSDT, etc.)
+Output: LIST of signals (even for single symbol)
+
+--------------------------------------------------
+
+RESPONSE FORMAT (ALWAYS LIST)
+
+Single symbol request:
+
+[
+  {
+    "symbol": "BTCUSDT",
+    "signal": "HOLD",
+    "probability": 0.52,
+    "volatility": 0.8,
+    "regime": "SIDEWAYS"
+  }
+]
+
+--------------------------------------------------
+
+Multiple symbols request:
+
+[
+  {
+    "symbol": "BTCUSDT",
+    "signal": "HOLD",
+    "probability": 0.52,
+    "volatility": 0.8,
+    "regime": "SIDEWAYS"
+  },
+  {
+    "symbol": "ETHUSDT",
+    "signal": "BUY",
+    "probability": 0.78,
+    "volatility": 1.1,
+    "regime": "TRENDING"
+  }
+]
+
+--------------------------------------------------
+
+API DESIGN
+
+GET /signal?symbol=BTCUSDT
+→ returns LIST with 1 item
+
+GET /signals
+→ returns LIST with multiple items
+
+--------------------------------------------------
+
+WORKFLOW
+
+Worker (every 5 minutes):
+
+FOR each symbol:
+  → Fetch data
+  → Calculate indicators
+  → Detect regime
+  → Run ML model
+  → Apply filters
+  → Generate signal
+  → Store in cache
+
+--------------------------------------------------
+
+CACHE STRUCTURE
+
+cache:BTCUSDT → {
+  symbol: BTCUSDT,
+  signal: HOLD,
+  probability: 0.52,
+  volatility: 0.8,
+  regime: SIDEWAYS
+}
+
+--------------------------------------------------
+
+API FLOW
+
+1. Receive request
+2. Read from cache
+3. Wrap result in LIST
+4. Return response
+
+--------------------------------------------------
+
+IMPORTANT RULES
+
+- ALWAYS return array []
+- Even for single symbol
+- Maintain consistent response format
+- Do not return raw object
+
+--------------------------------------------------
+
+FINAL MENTAL MODEL
+
+Worker:
+  multi-symbol analysis → cache
+
+API:
+  cache → wrap in list → response
+
+--------------------------------------------------
