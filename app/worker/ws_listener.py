@@ -17,6 +17,7 @@ import websockets
 from app.core.config import settings
 from app.services.cache import cache
 from app.services.signal_engine import generate_signal
+from app.services.telegram_notifier import send_signal_alert
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,17 @@ def _stream_url() -> str:
 
 async def _on_kline_close(symbol: str) -> None:
     try:
-        signal = await asyncio.to_thread(generate_signal, symbol)
-        cache.set(symbol, signal)
+        result = await asyncio.to_thread(generate_signal, symbol)
+        cache.set(symbol, result)
+        if result.signal in ("BUY", "SELL"):
+            await send_signal_alert(
+                symbol=result.symbol,
+                signal=result.signal,
+                price=result.current_price,
+                probability=result.probability,
+                volatility=result.volatility,
+                regime=result.regime,
+            )
     except Exception as exc:
         logger.error("Signal generation failed for %s: %s", symbol, exc)
 

@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # Minimum model confidence to emit BUY or SELL (below → HOLD)
     min_signal_confidence: float = 0.40
 
+    # ── Telegram notifications ────────────────────────────────────────────────
+    telegram_bot_token: str = ""   # set TELEGRAM_BOT_TOKEN in .env
+    telegram_chat_id: str = ""     # set TELEGRAM_CHAT_ID in .env
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property
