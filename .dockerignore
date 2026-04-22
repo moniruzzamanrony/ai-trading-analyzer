@@ -1,0 +1,9 @@
+logs/
+.venv/
+.git/
+.claude/
+.idea/
+__pycache__/
+*.pyc
+.env
+.env.local

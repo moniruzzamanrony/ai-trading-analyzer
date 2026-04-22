@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     app_title: str = "Multi-Symbol Trading Signal API"
     app_version: str = "1.0.0"
     log_level: str = "INFO"
+    log_dir: str = "logs"
 
     # ── Symbols watched by the background worker ──────────────────────────────
     # Comma-separated list, overridable via SYMBOLS env var
