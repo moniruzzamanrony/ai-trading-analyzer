@@ -65,25 +65,27 @@ def generate_signal(symbol: str) -> SignalResponse:
         raise ValueError(f"Not enough clean data for {symbol} after indicator warm-up")
 
     # ── Step 4: ML prediction ─────────────────────────────────────────────────
-    signal, probability = ml_predictor.predict(df)
+    signal, probability = ml_predictor.predict(df, symbol)
 
     # ── Step 5: Regime filter ─────────────────────────────────────────────────
     regime   = feature_engineering.detect_regime(df)
     signal, probability = _apply_regime_filter(signal, probability, regime)
 
     # ── Step 6: Build response ────────────────────────────────────────────────
-    volatility = feature_engineering.compute_response_volatility(df)
+    volatility    = feature_engineering.compute_response_volatility(df)
+    current_price = float(df["close"].iloc[-1])
 
     result = SignalResponse(
         symbol=symbol.upper(),
         signal=signal,
         probability=probability,
+        current_price=current_price,
         volatility=volatility,
         regime=regime,
     )
 
     logger.info(
-        "Signal ready | %s | %s | prob=%.3f | vol=%.2f%% | regime=%s",
-        symbol, signal, probability, volatility, regime,
+        "Signal ready | %s | %s | price=%.4f | prob=%.3f | vol=%.2f%% | regime=%s",
+        symbol, signal, current_price, probability, volatility, regime,
     )
     return result

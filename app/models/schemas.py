@@ -11,6 +11,7 @@ class SignalResponse(BaseModel):
     symbol: str = Field(..., description="Trading pair, e.g. BTCUSDT")
     signal: str = Field(..., description="BUY | SELL | HOLD")
     probability: float = Field(..., description="Model confidence for the predicted class (0–1)")
+    current_price: float = Field(..., description="Latest close price")
     volatility: float = Field(..., description="Realised volatility over the last 20 candles (%)")
     regime: str = Field(..., description="Market regime: TRENDING | SIDEWAYS")
 

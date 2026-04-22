@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     # ── Symbols watched by the background worker ──────────────────────────────
     # Comma-separated list, overridable via SYMBOLS env var
-    symbols: str = "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,ADAUSDT"
+    symbols: str = "BTCUSDT,ETHUSDT,BNBUSDT"
 
     # ── Worker schedule ───────────────────────────────────────────────────────
     worker_interval_minutes: int = 5  # how often signals are refreshed
@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     kline_limit: int = 300            # history depth; ≥200 so all indicators warm up
 
     # ── ML model files ────────────────────────────────────────────────────────
-    model_path: Path = Path("btc_xgb_model.pkl")
-    features_path: Path = Path("btc_features.pkl")
+    # Directory that holds <symbol_lower>_xgb_model.pkl and <symbol_lower>_features.pkl
+    models_dir: Path = Path(".")
 
     # ── Signal thresholds ─────────────────────────────────────────────────────
     # Minimum model confidence to emit BUY or SELL (below → HOLD)

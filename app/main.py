@@ -4,68 +4,59 @@ Application entry point.
 Responsibilities:
   - Create the FastAPI app.
   - Register the API router.
-  - Manage the APScheduler background worker lifecycle via FastAPI's lifespan.
-
-The lifespan context manager ensures the worker runs immediately at startup
-(so the cache is populated before the first request) and is cleanly shut down
-when the server exits.
+  - On startup: populate the cache via REST once, then connect to
+    Binance WebSocket kline streams for event-driven signal updates.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
 from app.api.routes import router
 from app.core.config import settings
 from app.core.logging_config import configure_logging
-from app.worker.scheduler import refresh_all_signals
+from app.services.cache import cache
+from app.services.signal_engine import generate_signal
+from app.worker import ws_listener
 
 configure_logging()
 logger = logging.getLogger(__name__)
 
 
+async def _initial_populate() -> None:
+    """Warm the cache via REST before the first WebSocket kline closes."""
+    logger.info("Populating cache for %s", settings.symbol_list)
+    for symbol in settings.symbol_list:
+        try:
+            signal = await asyncio.to_thread(generate_signal, symbol)
+            cache.set(symbol, signal)
+        except Exception as exc:
+            logger.error("Initial signal failed for %s: %s", symbol, exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    FastAPI lifespan context.
-
-    Startup:
-      1. Trigger an immediate signal refresh so the cache is ready.
-      2. Schedule subsequent refreshes every WORKER_INTERVAL_MINUTES minutes.
-
-    Shutdown:
-      - APScheduler is gracefully stopped (waits for any in-flight job to finish).
-    """
-    # ── Startup ───────────────────────────────────────────────────────────────
     logger.info(
-        "Starting %s v%s | symbols=%s | interval=%dm",
+        "Starting %s v%s | symbols=%s",
         settings.app_title,
         settings.app_version,
         settings.symbol_list,
-        settings.worker_interval_minutes,
     )
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        refresh_all_signals,
-        trigger="interval",
-        minutes=settings.worker_interval_minutes,
-        id="signal_refresh",
-        max_instances=1,          # prevent overlapping runs if one takes too long
-        replace_existing=True,
-    )
-    scheduler.start()
+    await _initial_populate()
 
-    # Populate cache immediately instead of waiting for the first interval tick
-    await refresh_all_signals()
+    ws_task = asyncio.create_task(ws_listener.run())
 
-    yield  # ←── application runs here
+    yield
 
-    # ── Shutdown ──────────────────────────────────────────────────────────────
-    scheduler.shutdown(wait=True)
-    logger.info("Scheduler stopped – shutting down.")
+    ws_task.cancel()
+    try:
+        await ws_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("WebSocket listener stopped – shutting down.")
 
 
 app = FastAPI(
@@ -73,7 +64,7 @@ app = FastAPI(
     version=settings.app_version,
     description=(
         "Real-time 5-minute trading signal API powered by XGBoost. "
-        "All endpoints return a JSON array for consistent consumer handling."
+        "Signals update on every closed Binance kline via WebSocket."
     ),
     lifespan=lifespan,
 )
