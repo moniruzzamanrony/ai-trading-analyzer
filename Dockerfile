@@ -16,6 +16,6 @@ ENV LOG_DIR=/app/logs
 RUN useradd -m appuser && mkdir -p /app/logs && chown -R appuser /app
 USER appuser
 
-EXPOSE 9010
+EXPOSE 9020
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9010"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9020"]
