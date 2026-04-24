@@ -42,4 +42,3 @@ def configure_logging() -> None:
     # Quiet noisy third-party loggers
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("websockets").setLevel(logging.WARNING)

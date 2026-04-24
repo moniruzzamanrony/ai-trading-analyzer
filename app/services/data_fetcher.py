@@ -1,14 +1,3 @@
-"""
-Binance public klines (candlestick) fetcher.
-
-Binance returns 12 columns per kline, but standard OHLCV libraries only expose 6.
-We call the REST endpoint directly so we can also capture:
-  - quote_asset_volume      (col 7)
-  - taker_buy_base_volume   (col 9)
-  - taker_buy_quote_volume  (col 10)
-These are required model features that measure real buy-side order flow.
-"""
-
 import logging
 import httpx
 import pandas as pd
@@ -17,7 +6,6 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Column names matching Binance kline response positions
 _KLINE_COLUMNS = [
     "timestamp",
     "open", "high", "low", "close", "volume",
@@ -30,20 +18,17 @@ _KLINE_COLUMNS = [
 ]
 
 
-def fetch_klines(symbol: str) -> pd.DataFrame:
+def fetch_klines(symbol: str, limit: int | None = None) -> pd.DataFrame:
     """
-    Fetch the most recent *kline_limit* 5-minute candles for *symbol* from Binance.
-
-    Returns a DataFrame indexed by UTC timestamp with float columns for all
-    price/volume fields that the feature-engineering layer needs.
-
+    Fetch the most recent 5-minute candles for *symbol* from Binance REST.
+    Returns a DataFrame indexed by UTC timestamp with OHLCV float columns.
     Raises httpx.HTTPError on network or non-200 response.
     """
     url = f"{settings.binance_base_url}/api/v3/klines"
     params = {
         "symbol": symbol.upper(),
         "interval": settings.kline_interval,
-        "limit": settings.kline_limit,
+        "limit": limit if limit is not None else settings.kline_limit,
     }
 
     logger.debug("Fetching klines: %s", params)
@@ -52,17 +37,8 @@ def fetch_klines(symbol: str) -> pd.DataFrame:
         response = client.get(url, params=params)
         response.raise_for_status()
 
-    raw = response.json()
-
-    df = pd.DataFrame(raw, columns=_KLINE_COLUMNS)
-
-    # Parse timestamp and set as index
+    df = pd.DataFrame(response.json(), columns=_KLINE_COLUMNS)
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df.set_index("timestamp", inplace=True)
 
-    # Keep only the columns we actually use; cast everything to float
-    keep = ["open", "high", "low", "close", "volume",
-            "quote_asset_volume", "taker_buy_base_volume", "taker_buy_quote_volume"]
-    df = df[keep].astype(float)
-
-    return df
+    return df[["open", "high", "low", "close", "volume"]].astype(float)
