@@ -11,7 +11,7 @@ import ta
 FEATURE_COLS = [
     "ema_diff",
     "ema9_slope",
-    "rsi_7",
+    "rsi_14",
     "macd_hist",
     "atr_ratio",
     "bb_width",
@@ -41,7 +41,7 @@ def compute_regression_features(df: pd.DataFrame) -> pd.DataFrame:
     df["ema9_slope"] = ema9.diff(3)
 
     # Momentum
-    df["rsi_7"] = ta.momentum.RSIIndicator(close, window=7).rsi()
+    df["rsi_14"] = ta.momentum.RSIIndicator(close, window=14).rsi()
     macd = ta.trend.MACD(close, window_fast=12, window_slow=26, window_sign=9)
     df["macd_hist"] = macd.macd_diff()
 
@@ -57,7 +57,7 @@ def compute_regression_features(df: pd.DataFrame) -> pd.DataFrame:
     df["bb_position"] = (close - bb_lower) / bb_range
 
     # Volume
-    vol_ma = volume.rolling(10).mean().replace(0, np.nan)
+    vol_ma = volume.rolling(20).mean().replace(0, np.nan)
     df["volume_ratio"] = volume / vol_ma
 
     # Price action

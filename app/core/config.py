@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     log_dir: str = "logs"
 
     binance_base_url: str = "https://api.binance.com"
-    kline_interval: str = "5m"
+    kline_interval: str = "15m"
     kline_limit: int = 300
 
     models_dir: Path = Path(".")

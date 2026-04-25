@@ -108,7 +108,7 @@ def build_dataset(symbols: list[str]) -> tuple[pd.DataFrame, LabelEncoder]:
             df = fetch_klines(symbol, limit=_TRAINING_CANDLES)
             df = compute_regression_features(df)
             df = detect_ema_crossovers(df)
-            df.dropna(subset=["ema9", "ema21", "rsi_7", "macd_hist"], inplace=True)
+            df.dropna(subset=["ema9", "ema21", "rsi_14", "macd_hist"], inplace=True)
 
             df["target_return"] = _create_labels(df)
             labeled = df.dropna(subset=["target_return"])

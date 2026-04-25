@@ -46,7 +46,7 @@ def predict_take_profit(
     df = fetch_klines(symbol.upper())
     df = compute_regression_features(df)
     df = detect_ema_crossovers(df)
-    df.dropna(subset=["ema9", "ema21", "rsi_7", "macd_hist"], inplace=True)
+    df.dropna(subset=["ema9", "ema21", "rsi_14", "macd_hist"], inplace=True)
 
     if df.empty:
         raise ValueError(f"Insufficient clean data for {symbol} after indicator warm-up.")
