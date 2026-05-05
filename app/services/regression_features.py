@@ -69,20 +69,21 @@ def compute_regression_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def detect_ema_crossovers(df: pd.DataFrame) -> pd.DataFrame:
+def detect_macd_hist_cycles(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Add buy_signal and sell_signal columns based on EMA-9 / EMA-21 crossovers.
+    Add buy_signal and sell_signal columns based on MACD(12,26,9) histogram
+    sign changes.
 
-    buy_signal  = 1 when ema9 crosses ABOVE ema21
-    sell_signal = 1 when ema9 crosses BELOW ema21
+    buy_signal  = 1 on the first bar where the histogram turns positive
+                  (green-start: prev <= 0 and curr > 0)
+    sell_signal = 1 on the first bar where the histogram turns non-positive
+                  (red-start:   prev > 0 and curr <= 0)
     """
-    ema9 = df["ema9"]
-    ema21 = df["ema21"]
+    hist = df["macd_hist"]
+    prev_pos = hist.shift(1) > 0
+    curr_pos = hist > 0
 
-    prev_above = ema9.shift(1) > ema21.shift(1)
-    curr_above = ema9 > ema21
-
-    df["buy_signal"] = (~prev_above & curr_above).astype(int)
-    df["sell_signal"] = (prev_above & ~curr_above).astype(int)
+    df["buy_signal"] = (~prev_pos & curr_pos).astype(int)
+    df["sell_signal"] = (prev_pos & ~curr_pos).astype(int)
 
     return df

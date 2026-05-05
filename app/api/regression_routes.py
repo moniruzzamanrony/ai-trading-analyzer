@@ -19,7 +19,7 @@ from app.models.schemas import (
     TrainResponse,
 )
 from app.services import regression_predictor, regression_trainer
-from app.services.regression_trainer import get_accuracy
+from app.services.regression_trainer import get_hit_rate, get_quantile_alpha
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,11 @@ router = APIRouter(prefix="/regression", tags=["regression"])
     response_model=TrainResponse,
     summary="Train multi-symbol regression model",
     description=(
-        "Fetches 1 000 × 5-min candles per symbol, engineers features "
-        "(past-only), creates target_return labels from future data, and "
-        "trains an XGBRegressor with an 80/20 time-based split. "
-        "Returns evaluation metrics for the held-out test window."
+        "Fetches candles per symbol, engineers features (past-only), creates "
+        "target_return labels = max_pct_up during each MACD-bullish cycle, "
+        "and trains a quantile XGBRegressor with an 80/20 time-based split. "
+        "Lower quantile_alpha → more conservative predictions that get hit "
+        "more often. Returns evaluation metrics including hit_rate."
     ),
 )
 async def train_model(req: TrainRequest) -> TrainResponse:
@@ -42,7 +43,11 @@ async def train_model(req: TrainRequest) -> TrainResponse:
         raise HTTPException(status_code=422, detail="At least one symbol is required.")
     try:
         metrics = await asyncio.to_thread(
-            regression_trainer.train, [s.upper() for s in req.symbols]
+            regression_trainer.train,
+            [s.upper() for s in req.symbols],
+            req.quantile_alpha,
+            req.lookback_days,
+            req.forward_horizon,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -58,9 +63,10 @@ async def train_model(req: TrainRequest) -> TrainResponse:
     summary="Predict take-profit for a BUY entry",
     description=(
         "Builds live features from the most recent candle and predicts the "
-        "expected return until the next EMA cross-down. "
-        "Returns the suggested take-profit price and whether the trade passes "
-        "the minimum return filter."
+        "conservative max return during the upcoming MACD bullish cycle "
+        "(green-start → red-start). Returns the suggested sell price, the "
+        "expected hit-rate, and whether the trade passes the minimum return "
+        "filter."
     ),
 )
 async def predict_take_profit(req: PredictTPRequest) -> PredictTPResponse:
@@ -74,7 +80,6 @@ async def predict_take_profit(req: PredictTPRequest) -> PredictTPResponse:
             regression_predictor.predict_take_profit,
             req.symbol,
             req.buy_price,
-            req.min_return_threshold,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
@@ -95,5 +100,6 @@ async def predict_take_profit(req: PredictTPRequest) -> PredictTPResponse:
 async def model_status() -> RegressionStatusResponse:
     return RegressionStatusResponse(
         trained=regression_trainer.is_trained(),
-        directional_accuracy=get_accuracy(),
+        quantile_alpha=get_quantile_alpha(),
+        hit_rate=get_hit_rate(),
     )
