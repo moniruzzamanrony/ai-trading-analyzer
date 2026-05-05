@@ -45,3 +45,5 @@ htmlcov/
 
 # Jupyter
 .ipynb_checkpoints/
+
+./deploy.sh
