@@ -2,7 +2,7 @@ services:
   api:
     build: .
     ports:
-      - "9010:9010"
+      - "9030:9030"
     env_file:
       - .env
     volumes:
