@@ -1,0 +1,28 @@
+🚀 Project: AI Trading Signal Analyzer — Take-Profit Prediction API
+
+📢 Sharing a side project: a machine learning service that predicts take-profit targets for crypto BUY entries.
+
+🎯 The problem
+Most traders set take-profit levels using fixed percentages or intuition. Both ignore the fact that different assets, and different market conditions, produce very different post-entry behavior. I wanted to test whether a model could produce better-calibrated exit prices by learning directly from how each coin actually moves after a BUY signal.
+
+⚙️ What it does
+The service exposes a single endpoint. Given a symbol and entry price, it returns an expected return, a recommended take-profit price, and a historical hit-rate that indicates how often similar setups have reached that target.
+
+💬 Example response:
+"Expected return: +2.3%. Recommended TP: $66,495. Historical hit-rate at this level: 71%."
+
+🛠️ Approach
+- 🚀 FastAPI service layer, containerized with Docker
+- 🧠 XGBoost quantile regression as the core model, trained on multi-symbol 5-minute Binance candles
+- 📊 13-feature pipeline: EMA diff and slope, RSI-14, MACD histogram, ATR ratio, Bollinger width and position, volume ratio, short-term returns, candle range and body, symbol encoding
+- ⏱️ Strict 80/20 time-based split with no shuffling, so the model is never evaluated on data that leaked from the future
+- 🔁 Labels derived from real EMA crossover cycles rather than synthetic targets, so the model learns from market behavior between actual BUY and SELL points
+- 📈 scikit-learn for evaluation: MAE, RMSE, and R²
+
+🔍 Design priorities
+Avoiding lookahead bias was the first constraint, not an afterthought. In trading ML it is easy to produce models that look excellent in backtests and fail in production because a feature was computed using information that would not have been available at inference time. The pipeline is built so every feature is past-only by construction.
+
+🚦 Next steps
+A detailed write-up of the training methodology and out-of-sample results is in progress. Happy to discuss the architecture, feature engineering, or evaluation choices with anyone working in this space. 🙌
+
+#MachineLearning #Python #FastAPI #XGBoost #QuantitativeFinance #AlgorithmicTrading #DataScience

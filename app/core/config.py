@@ -14,6 +14,11 @@ class Settings(BaseSettings):
 
     models_dir: Path = Path(".")
 
+    mailjet_api_key: str = ""
+    mailjet_api_secret: str = ""
+    mailjet_from_email: str = ""
+    mailjet_error_recipient: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
