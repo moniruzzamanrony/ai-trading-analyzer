@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from app.api.regression_routes import router as regression_router
 from app.core.config import settings
 from app.core.logging_config import configure_logging
-from app.scheduler.apschedular import shutdown_scheduler, start_scheduler
+from app.services import regression_trainer
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -14,11 +14,23 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    start_scheduler()
-    try:
-        yield
-    finally:
-        shutdown_scheduler()
+    if regression_trainer.is_trained():
+        try:
+            bundle = regression_trainer.load_bundle()
+            logger.info(
+                "Loaded regression model from disk: horizons=%s alphas=%s features=%d",
+                bundle.get("horizons"),
+                bundle.get("alphas"),
+                len(bundle.get("feature_cols", [])),
+            )
+        except Exception:
+            logger.exception("Failed to pre-load regression model on startup")
+    else:
+        logger.warning(
+            "No trained regression model found at startup; "
+            "POST /v2/regression/train before calling /v2/regression/predict."
+        )
+    yield
 
 
 app = FastAPI(

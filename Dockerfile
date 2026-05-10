@@ -8,7 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source
 COPY app/ ./app/
-COPY *.pkl ./
+
+# Copy trained model artifacts (pkl bundle + metadata).
+# Build will fail if either is missing — deploy.sh enforces this pre-flight.
+COPY regression_xgb_model.pkl regression_metadata.json ./
 
 ENV LOG_DIR=/app/logs
 
