@@ -17,6 +17,8 @@ async def async_job():
         regression_trainer.train,
         symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT"],
         lookback_days=365,
+        horizons=[16,24,32],
+        alphas= [0.3, 0.5, 0.7]
     )
 
     recipient = settings.mailjet_error_recipient

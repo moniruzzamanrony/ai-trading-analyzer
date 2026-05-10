@@ -23,11 +23,11 @@ from app.services.regression_trainer import get_hit_rate, get_quantile_alpha
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/regression", tags=["regression"])
+router = APIRouter(prefix="/v2/regression", tags=["regression"])
 
 
 @router.post(
-    "/v2/train",
+    "/train",
     response_model=TrainResponse,
     summary="Train multi-symbol regression model",
     description=(
@@ -60,7 +60,7 @@ async def train_model(req: TrainRequest) -> TrainResponse:
 
 
 @router.post(
-    "/v2/predict",
+    "/predict",
     response_model=PredictTPResponse,
     summary="Predict take-profit for a BUY entry",
     description=(
@@ -95,7 +95,7 @@ async def predict_take_profit(req: PredictTPRequest) -> PredictTPResponse:
 
 
 @router.get(
-    "/v2/status",
+    "/status",
     response_model=RegressionStatusResponse,
     summary="Regression model status",
     description="Returns whether a trained regression model is available for prediction.",
