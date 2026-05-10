@@ -19,6 +19,14 @@ _KLINE_COLUMNS = [
     "ignore",
 ]
 
+# Columns retained for downstream features. Microstructure cols
+# (taker_buy_*, num_trades, quote_asset_volume) carry order-flow signal.
+_KEEP_COLUMNS = [
+    "open", "high", "low", "close", "volume",
+    "quote_asset_volume", "num_trades",
+    "taker_buy_base_volume", "taker_buy_quote_volume",
+]
+
 # Binance returns at most 1000 candles per /klines request.
 _MAX_BINANCE_LIMIT = 1000
 
@@ -55,7 +63,7 @@ def fetch_klines(symbol: str, limit: int | None = None) -> pd.DataFrame:
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df.set_index("timestamp", inplace=True)
 
-    return df[["open", "high", "low", "close", "volume"]].astype(float)
+    return df[_KEEP_COLUMNS].astype(float)
 
 
 def fetch_klines_history(
@@ -118,9 +126,9 @@ def fetch_klines_history(
     )
 
     if not rows:
-        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+        return pd.DataFrame(columns=_KEEP_COLUMNS)
 
     df = pd.DataFrame(rows, columns=_KLINE_COLUMNS)
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df = df.drop_duplicates(subset="timestamp").set_index("timestamp").sort_index()
-    return df[["open", "high", "low", "close", "volume"]].astype(float)
+    return df[_KEEP_COLUMNS].astype(float)

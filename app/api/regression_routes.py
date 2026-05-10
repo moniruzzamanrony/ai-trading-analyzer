@@ -27,7 +27,7 @@ router = APIRouter(prefix="/regression", tags=["regression"])
 
 
 @router.post(
-    "/train",
+    "/v2/train",
     response_model=TrainResponse,
     summary="Train multi-symbol regression model",
     description=(
@@ -48,6 +48,8 @@ async def train_model(req: TrainRequest) -> TrainResponse:
             req.quantile_alpha,
             req.lookback_days,
             req.forward_horizon,
+            tuple(req.alphas) if req.alphas else None,
+            tuple(req.horizons) if req.horizons else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -58,7 +60,7 @@ async def train_model(req: TrainRequest) -> TrainResponse:
 
 
 @router.post(
-    "/predict",
+    "/v2/predict",
     response_model=PredictTPResponse,
     summary="Predict take-profit for a BUY entry",
     description=(
@@ -80,6 +82,7 @@ async def predict_take_profit(req: PredictTPRequest) -> PredictTPResponse:
             regression_predictor.predict_take_profit,
             req.symbol,
             req.buy_price,
+            req.forward_candles,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
@@ -92,7 +95,7 @@ async def predict_take_profit(req: PredictTPRequest) -> PredictTPResponse:
 
 
 @router.get(
-    "/status",
+    "/v2/status",
     response_model=RegressionStatusResponse,
     summary="Regression model status",
     description="Returns whether a trained regression model is available for prediction.",

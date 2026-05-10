@@ -16,9 +16,7 @@ async def async_job():
     result = await asyncio.to_thread(
         regression_trainer.train,
         symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT"],
-        lookback_days=60,
-        forward_horizon=60,
-        quantile_alpha=0.3,
+        lookback_days=365,
     )
 
     recipient = settings.mailjet_error_recipient
