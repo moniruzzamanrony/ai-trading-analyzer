@@ -54,6 +54,7 @@ def predict_take_profit(
     models_by_horizon: dict = bundle["models"]   # {horizon: {alpha: model}}
     feature_cols: list[str] = bundle["feature_cols"]
     symbol_cols: list[str] = bundle["symbol_cols"]
+    calibration: dict = bundle.get("calibration") or {}  # {horizon: {alpha: offset}}
     available_horizons: list[int] = sorted(int(h) for h in models_by_horizon.keys())
 
     if forward_candles is None:
@@ -98,12 +99,17 @@ def predict_take_profit(
 
     atr_to_return = atr_now / close_now
     horizon_models: dict = models_by_horizon[chosen_horizon]
+    horizon_offsets: dict = calibration.get(chosen_horizon, {}) or {}
 
     quantiles: dict = {}
     for alpha in sorted(horizon_models.keys()):
         model = horizon_models[alpha]
         pred_units = float(model.predict(X)[0])
-        pred_return = max(pred_units * atr_to_return, 0.0)
+        # Conformal calibration: shift the raw quantile prediction so the
+        # empirical hit-rate matches `1 − α`. Older bundles default to 0.0.
+        offset = float(horizon_offsets.get(alpha, 0.0))
+        pred_units_cal = pred_units + offset
+        pred_return = max(pred_units_cal * atr_to_return, 0.0)
         sell_price = round(buy_price * (1.0 + pred_return), 8)
         profit_pct = round(pred_return * 100.0 - TRADING_FEE_PCT, 4)
         quantiles[_label_for(alpha)] = {

@@ -144,7 +144,33 @@ def _eval_metrics(y_true: np.ndarray, y_pred: np.ndarray, alpha: float) -> dict:
     }
 
 
-# ── Walk-forward CV with embargo ───────────────────────────────────────────────
+# ── Sample weighting & conformal calibration ───────────────────────────────────
+
+def _time_decay_weights(n: int, half_life_frac: float = 0.5) -> np.ndarray:
+    """Exponential time-decay weights – newest row = 1.0, half-weight at
+    `half_life_frac * n` rows back. Reduces the influence of stale regimes
+    on the final fit without discarding history outright."""
+    if n <= 0:
+        return np.empty(0, dtype=np.float64)
+    if half_life_frac <= 0:
+        return np.ones(n, dtype=np.float64)
+    lam = np.log(2.0) / max(1.0, half_life_frac * n)
+    ages = np.arange(n - 1, -1, -1, dtype=np.float64)
+    return np.exp(-lam * ages)
+
+
+def _conformal_offset(residuals: np.ndarray, alpha: float) -> float:
+    """Empirical α-quantile of CV residuals (y_true − y_pred).
+
+    Adding this offset to predictions makes the *empirical* hit-rate match
+    `1 − α` on iid-ish data: hit ≡ y ≥ ŷ + δ ⇔ residual ≥ δ; if δ is the
+    α-quantile of residuals then P(residual ≥ δ) = 1 − α."""
+    if residuals.size == 0:
+        return 0.0
+    return float(np.quantile(residuals, alpha))
+
+
+# ── Walk-forward CV with embargo + purging ─────────────────────────────────────
 
 def _walk_forward_cv(
     X: np.ndarray,
@@ -155,8 +181,10 @@ def _walk_forward_cv(
 ) -> dict:
     tscv = TimeSeriesSplit(n_splits=n_splits)
     fold_metrics: list[dict] = []
+    all_residuals: list[np.ndarray] = []
 
     for fold, (train_idx, test_idx) in enumerate(tscv.split(X), start=1):
+        # Purge: drop the tail of train whose forward window overlaps test.
         if embargo < len(train_idx):
             train_idx = train_idx[:-embargo]
         if len(train_idx) == 0 or len(test_idx) == 0:
@@ -167,6 +195,7 @@ def _walk_forward_cv(
             val_size = max(1, len(train_idx) // 5)
         val_idx = train_idx[-val_size:]
         fit_idx = train_idx[:-val_size]
+        # Purge again between fit and val (same forward-window leakage risk).
         if embargo < len(fit_idx):
             fit_idx = fit_idx[:-embargo]
         if len(fit_idx) == 0:
@@ -175,10 +204,12 @@ def _walk_forward_cv(
         model = _make_model(alpha)
         model.fit(
             X[fit_idx], y[fit_idx],
+            sample_weight=_time_decay_weights(len(fit_idx)),
             eval_set=[(X[val_idx], y[val_idx])],
             verbose=False,
         )
         y_pred = model.predict(X[test_idx])
+        all_residuals.append(y[test_idx] - y_pred)
         m = _eval_metrics(y[test_idx], y_pred, alpha)
         m["fold"] = fold
         m["train_n"] = int(len(fit_idx))
@@ -196,6 +227,9 @@ def _walk_forward_cv(
     keys = ("mae", "rmse", "r2", "hit_rate", "pinball")
     summary = {k: float(np.mean([m[k] for m in fold_metrics])) for k in keys}
     summary["folds"] = fold_metrics
+    residuals = np.concatenate(all_residuals) if all_residuals else np.empty(0)
+    summary["calibration_offset"] = _conformal_offset(residuals, alpha)
+    summary["calibration_n"] = int(residuals.size)
     return summary
 
 
@@ -268,6 +302,7 @@ def train(
 
     cv_metrics: dict[str, dict] = {}
     bundle_models: dict[int, dict[float, XGBRegressor]] = {}
+    calibration: dict[int, dict[float, float]] = {}
     feature_cols: list[str] = []
     total_samples = 0
 
@@ -296,6 +331,7 @@ def train(
             continue
 
         per_horizon_models: dict[float, XGBRegressor] = {}
+        per_horizon_offsets: dict[float, float] = {}
         for alpha in alphas_t:
             logger.info("  --- alpha=%.2f ---", alpha)
             cv = _walk_forward_cv(X, y, alpha, h, _CV_SPLITS)
@@ -304,19 +340,25 @@ def train(
             model = _make_model(alpha)
             model.fit(
                 X[:fit_end], y[:fit_end],
+                sample_weight=_time_decay_weights(fit_end),
                 eval_set=[(X[-val_size:], y[-val_size:])],
                 verbose=False,
             )
             per_horizon_models[float(alpha)] = model
+            offset = float(cv.get("calibration_offset", 0.0))
+            per_horizon_offsets[float(alpha)] = offset
             logger.info(
-                "  h=%d a=%.2f final: best_iter=%s, train_n=%d val_n=%d",
+                "  h=%d a=%.2f final: best_iter=%s, train_n=%d val_n=%d "
+                "conformal_offset=%+.4f (from %d CV residuals)",
                 h, alpha,
                 getattr(model, "best_iteration", "?"),
-                fit_end, val_size,
+                fit_end, val_size, offset,
+                int(cv.get("calibration_n", 0)),
             )
 
         if per_horizon_models:
             bundle_models[int(h)] = per_horizon_models
+            calibration[int(h)] = per_horizon_offsets
 
     if not bundle_models:
         raise ValueError("No horizons produced a trained model – aborting")
@@ -327,10 +369,17 @@ def train(
         "symbol_cols":  sym_cols,
         "alphas":       [float(a) for a in alphas_t],
         "horizons":     sorted(bundle_models.keys()),
+        "calibration":  calibration,
     }
     with open(_model_path(), "wb") as fh:
         pickle.dump(bundle, fh)
 
+    # Metadata mirrors calibration with string keys so it's JSON-safe and
+    # inspectable without unpickling the bundle.
+    calibration_meta = {
+        str(h): {f"{a:.2f}": float(off) for a, off in alpha_map.items()}
+        for h, alpha_map in calibration.items()
+    }
     metadata = {
         "alphas":          [float(a) for a in alphas_t],
         "horizons":        sorted(bundle_models.keys()),
@@ -341,6 +390,7 @@ def train(
         "symbols":         symbols_norm,
         "total_samples":   total_samples,
         "cv_metrics":      cv_metrics,
+        "calibration":     calibration_meta,
     }
     with open(_metadata_path(), "w") as fh:
         json.dump(metadata, fh, indent=2)
@@ -355,6 +405,7 @@ def train(
             "symbol_cols":     sym_cols,
             "alphas":          [float(a) for a in alphas_t],
             "horizons":        sorted(bundle_models.keys()),
+            "calibration":     calibration,
             "lookback_days":   lookback_days,
             "metadata":        metadata,
         })
@@ -404,6 +455,7 @@ def load_bundle() -> dict:
                 "symbol_cols":  _cache["symbol_cols"],
                 "alphas":       _cache["alphas"],
                 "horizons":     _cache["horizons"],
+                "calibration":  _cache.get("calibration", {}),
                 "metadata":     _cache.get("metadata", {}),
             }
 
@@ -424,6 +476,9 @@ def load_bundle() -> dict:
         with open(_metadata_path()) as fh:
             metadata = json.load(fh)
 
+    # Calibration is a v2.0.1+ addition — older bundles fall back to no offset.
+    calibration = bundle.get("calibration") or {}
+
     with _lock:
         _cache.update({
             "trained":      True,
@@ -432,6 +487,7 @@ def load_bundle() -> dict:
             "symbol_cols":  bundle["symbol_cols"],
             "alphas":       bundle["alphas"],
             "horizons":     bundle["horizons"],
+            "calibration":  calibration,
             "lookback_days": metadata.get("lookback_days"),
             "metadata":     metadata,
         })
@@ -442,6 +498,7 @@ def load_bundle() -> dict:
         "symbol_cols":  bundle["symbol_cols"],
         "alphas":       bundle["alphas"],
         "horizons":     bundle["horizons"],
+        "calibration":  calibration,
         "metadata":     metadata,
     }
 
