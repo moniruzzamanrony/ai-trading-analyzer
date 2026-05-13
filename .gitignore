@@ -46,4 +46,5 @@ htmlcov/
 # Jupyter
 .ipynb_checkpoints/
 
-./deploy.sh
+# Deployment script (contains secrets)
+deploy.sh
