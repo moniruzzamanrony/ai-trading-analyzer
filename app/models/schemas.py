@@ -51,7 +51,7 @@ class TrainRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "examples": [
-                {"symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+                {"symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT"],
                  "lookback_days": 365,
                  "horizons": [16, 60, 240],
                  "alphas": [0.3, 0.5, 0.7]}

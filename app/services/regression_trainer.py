@@ -41,8 +41,6 @@ from app.services.regression_features import (
 logger = logging.getLogger(__name__)
 
 _DEFAULT_LOOKBACK_DAYS = 365
-_DEFAULT_HORIZONS: tuple[int, ...] = (16, 60, 240)   # 4h / 15h / 60h on 15m
-_DEFAULT_QUANTILES: tuple[float, ...] = (0.3, 0.5, 0.7)
 _CV_SPLITS = 5
 _EARLY_STOPPING_ROUNDS = 50
 
@@ -248,14 +246,14 @@ def train(
     elif forward_horizon is not None:
         horizons_t = (int(forward_horizon),)
     else:
-        horizons_t = _DEFAULT_HORIZONS
+        raise ValueError("forward_horizon or horizons must be a non-empty sequence of ints")
 
     if quantile_alpha is not None and alphas is None:
         alphas_t: tuple[float, ...] = (float(quantile_alpha),)
     elif alphas is not None:
         alphas_t = tuple(float(a) for a in alphas)
     else:
-        alphas_t = _DEFAULT_QUANTILES
+        raise ValueError("quantile_alpha or alphas must be provided")
 
     if not horizons_t or any(h <= 0 for h in horizons_t):
         raise ValueError("horizons must be a non-empty sequence of positive ints")
