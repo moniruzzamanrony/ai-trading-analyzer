@@ -23,7 +23,7 @@ from app.services.regression_trainer import get_hit_rate, get_quantile_alpha
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/regression", tags=["regression"])
+router = APIRouter(prefix="/v2/regression", tags=["regression"])
 
 
 @router.post(
@@ -48,6 +48,8 @@ async def train_model(req: TrainRequest) -> TrainResponse:
             req.quantile_alpha,
             req.lookback_days,
             req.forward_horizon,
+            tuple(req.alphas) if req.alphas else None,
+            tuple(req.horizons) if req.horizons else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -80,6 +82,7 @@ async def predict_take_profit(req: PredictTPRequest) -> PredictTPResponse:
             regression_predictor.predict_take_profit,
             req.symbol,
             req.buy_price,
+            req.forward_candles,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
