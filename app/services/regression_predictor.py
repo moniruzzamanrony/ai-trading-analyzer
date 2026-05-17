@@ -16,6 +16,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from app.core.config import settings
 from app.services.data_fetcher import fetch_klines
 from app.services.regression_features import compute_regression_features
 from app.services.regression_trainer import (
@@ -26,8 +27,6 @@ from app.services.regression_trainer import (
 )
 
 logger = logging.getLogger(__name__)
-
-TRADING_FEE_PCT = 0.2  # round-trip entry+exit fee, %
 
 _QUANTILE_LABEL = {
     0.3: "conservative",
@@ -64,8 +63,12 @@ def predict_take_profit(
 
     chosen_horizon = _nearest_horizon(int(forward_candles), available_horizons)
     if chosen_horizon != forward_candles:
-        logger.info(
-            "forward_candles=%d → snapped to nearest trained horizon=%d (available: %s)",
+        # Snap is silent profitkiller bait: caller asks for h=24, gets h=16,
+        # entirely different time window. Surface at warn level so ops can
+        # see the mismatch even though the wire response shape is unchanged.
+        logger.warning(
+            "forward_candles=%d snapped to trained horizon=%d (available=%s). "
+            "Train at the requested horizon to remove this snap.",
             forward_candles, chosen_horizon, available_horizons,
         )
 
@@ -100,6 +103,7 @@ def predict_take_profit(
     atr_to_return = atr_now / close_now
     horizon_models: dict = models_by_horizon[chosen_horizon]
     horizon_offsets: dict = calibration.get(chosen_horizon, {}) or {}
+    fee_pct = float(settings.trading_fee_pct)
 
     quantiles: dict = {}
     for alpha in sorted(horizon_models.keys()):
@@ -111,7 +115,7 @@ def predict_take_profit(
         pred_units_cal = pred_units + offset
         pred_return = max(pred_units_cal * atr_to_return, 0.0)
         sell_price = round(buy_price * (1.0 + pred_return), 8)
-        profit_pct = round(pred_return * 100.0 - TRADING_FEE_PCT, 4)
+        profit_pct = round(pred_return * 100.0 - fee_pct, 4)
         quantiles[_label_for(alpha)] = {
             "alpha":            float(alpha),
             "sell_price":       sell_price,

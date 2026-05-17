@@ -18,6 +18,11 @@ BASE_FEATURE_COLS = [
     "ema9_slope",
     "rsi_14",
     "macd_hist",
+    # MACD cycle awareness — the bot exits on MACD red-start, so the
+    # model needs to see where in the green/red cycle we are.
+    "macd_hist_slope",
+    "macd_state_age",
+    "bars_since_macd_green_start",
     "atr_ratio",
     "bb_width",
     "bb_position",
@@ -48,10 +53,14 @@ BASE_FEATURE_COLS = [
     "rsi_14_1h",
     "atr_ratio_1h",
     "ret_1h",
+    "macd_hist_1h",
+    "macd_hist_slope_1h",
     "ema_diff_4h",
     "rsi_14_4h",
     "atr_ratio_4h",
     "ret_4h",
+    "macd_hist_4h",
+    "macd_hist_slope_4h",
 ]
 
 def symbol_one_hot_cols(symbols: list[str]) -> list[str]:
@@ -66,16 +75,20 @@ def _safe_div(num: pd.Series, den: pd.Series) -> pd.Series:
 def _add_htf_features(df: pd.DataFrame, rule: str, suffix: str) -> pd.DataFrame:
     """
     Resample 15m OHLCV → higher-timeframe (rule e.g. '1h', '4h'),
-    compute EMA9/EMA21 diff, RSI(14), ATR(14)/close, and 1-bar return,
-    then forward-fill back onto the 15m index. Past-only by construction
-    because we only forward-fill (never bfill).
+    compute EMA9/EMA21 diff, RSI(14), ATR(14)/close, 1-bar return, and
+    MACD histogram (+ 3-bar slope), then forward-fill back onto the 15m
+    index. Past-only by construction because we only forward-fill (never bfill).
     """
+    out_cols = (
+        f"ema_diff_{suffix}", f"rsi_14_{suffix}",
+        f"atr_ratio_{suffix}", f"ret_{suffix}",
+        f"macd_hist_{suffix}", f"macd_hist_slope_{suffix}",
+    )
     htf = df[["open", "high", "low", "close"]].resample(rule, label="right", closed="right").agg(
         {"open": "first", "high": "max", "low": "min", "close": "last"}
     ).dropna()
     if htf.empty:
-        for col in (f"ema_diff_{suffix}", f"rsi_14_{suffix}",
-                    f"atr_ratio_{suffix}", f"ret_{suffix}"):
+        for col in out_cols:
             df[col] = np.nan
         return df
 
@@ -85,12 +98,16 @@ def _add_htf_features(df: pd.DataFrame, rule: str, suffix: str) -> pd.DataFrame:
     atr = ta.volatility.AverageTrueRange(
         htf["high"], htf["low"], htf["close"], window=14
     ).average_true_range()
+    macd = ta.trend.MACD(htf["close"], window_fast=12, window_slow=26, window_sign=9)
+    macd_hist_htf = macd.macd_diff() / htf["close"]
 
     htf_feats = pd.DataFrame(index=htf.index)
     htf_feats[f"ema_diff_{suffix}"] = ema9 - ema21
     htf_feats[f"rsi_14_{suffix}"] = rsi
     htf_feats[f"atr_ratio_{suffix}"] = _safe_div(atr, htf["close"])
     htf_feats[f"ret_{suffix}"] = htf["close"].pct_change(1)
+    htf_feats[f"macd_hist_{suffix}"] = macd_hist_htf
+    htf_feats[f"macd_hist_slope_{suffix}"] = macd_hist_htf.diff(3)
 
     # Forward-fill onto the 15m index — each 15m bar inherits the most
     # recently CLOSED higher-timeframe bar's values.
@@ -98,6 +115,38 @@ def _add_htf_features(df: pd.DataFrame, rule: str, suffix: str) -> pd.DataFrame:
     for col in aligned.columns:
         df[col] = aligned[col]
     return df
+
+
+def _macd_cycle_features(macd_hist: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """
+    Compute MACD-histogram cycle-position features the bot cares about.
+
+    Returns:
+        macd_hist_slope:              3-bar slope of macd_hist.
+        macd_state_age:               bars elapsed in the current sign-of-hist state
+                                      (green = >0, red = <=0).
+        bars_since_macd_green_start:  bars since the last green-start
+                                      (prev <= 0 → curr > 0). Stays elevated
+                                      during red phases.
+    """
+    slope = macd_hist.diff(3)
+
+    is_green = (macd_hist > 0).astype(int)
+    # state_age: cumulative count of bars in the current run (resets at every flip).
+    state_change = is_green.diff().abs().fillna(0).astype(int)
+    block_id = state_change.cumsum()
+    state_age = is_green.groupby(block_id).cumcount().astype(float)
+
+    # bars_since_macd_green_start: counter resets at every green-start.
+    prev_green = is_green.shift(1).fillna(0).astype(int)
+    green_start = ((prev_green == 0) & (is_green == 1)).astype(int)
+    green_block_id = green_start.cumsum()
+    # Pre-first-green rows live in block 0 → cumcount is meaningless there,
+    # but it just measures "bars since dataset start" which the model can
+    # learn to ignore.
+    bars_since_green = green_start.groupby(green_block_id).cumcount().astype(float)
+
+    return slope, state_age, bars_since_green
 
 
 def compute_regression_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -118,6 +167,13 @@ def compute_regression_features(df: pd.DataFrame) -> pd.DataFrame:
     df["rsi_14"] = ta.momentum.RSIIndicator(close, window=14).rsi()
     macd = ta.trend.MACD(close, window_fast=12, window_slow=26, window_sign=9)
     df["macd_hist"] = macd.macd_diff() / close
+
+    # MACD-cycle features — the bot exits on MACD red-start, so cycle
+    # position is load-bearing signal for the take-profit prediction.
+    slope, state_age, bars_since_green = _macd_cycle_features(df["macd_hist"])
+    df["macd_hist_slope"] = slope
+    df["macd_state_age"] = state_age
+    df["bars_since_macd_green_start"] = bars_since_green
 
     # ── Volatility ──────────────────────────────────────────────────────────
     atr = ta.volatility.AverageTrueRange(high, low, close, window=14).average_true_range()

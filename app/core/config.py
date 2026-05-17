@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_title: str = "Trading AI Analyzer API"
-    app_version: str = "2.0.0"
+    app_version: str = "2.1.0"
     log_level: str = "INFO"
     log_dir: str = "logs"
 
@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     kline_limit: int = 300
 
     models_dir: Path = Path(".")
+
+    # Round-trip trading fee (% of notional). Net `profitPercentage` returned
+    # to the bot subtracts this. Override via TRADING_FEE_PCT to match the
+    # bot's actual fee tier (e.g. 0.15 when paying in BNB).
+    trading_fee_pct: float = 0.2
 
     mailjet_api_key: str = ""
     mailjet_api_secret: str = ""
